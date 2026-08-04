@@ -529,21 +529,23 @@ function processExcelFile(file) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
 
-      let updated=0, errors=[];
-      // Scan rows 19-29 (Excel rows, 0-indexed = 18-28)
+      let updated=0;
+      // Excel rows 19-29 (0-indexed: 18-28)
+      // Date columns start at col F = column index 6 in Excel = array index 5
+      // colIdx for app = array_index - 5
       const empRowsExcel = [19,20,21,22,23,24,25,26,27,28,29];
       empRowsExcel.forEach(excelRow => {
         const empIdx = EXCEL_ROW_MAP[excelRow];
-        if (empIdx===undefined) return;
-        const rowData = data[excelRow-1]; // 0-indexed
+        if (empIdx === undefined) return;
+        const rowData = data[excelRow - 1]; // convert to 0-indexed
         if (!rowData) return;
         const newVacs = new Set();
-        // Columns F onwards = index 5 onwards in row array
-        rowData.forEach((val,colArrayIdx) => {
-          if (colArrayIdx < 5) return; // skip name/skill/turno cols
-          const colIdx = colArrayIdx - 5; // map to date colIdx
-          if (colIdx < STATIC.dates.length && String(val).toUpperCase().trim() === 'V') {
-            newVacs.add(colIdx);
+        rowData.forEach((val, arrayIdx) => {
+          if (arrayIdx < 5) return; // skip cols A-E (CTL, skill, turno, etc)
+          const colIdx = arrayIdx - 5; // F=index5 → colIdx0, G=index6 → colIdx1...
+          if (colIdx >= 0 && colIdx < STATIC.dates.length) {
+            const v = String(val).toUpperCase().trim();
+            if (v === 'V') newVacs.add(colIdx);
           }
         });
         vacState[empIdx] = newVacs;
