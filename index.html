@@ -193,7 +193,7 @@ table{border-collapse:collapse}
 <!-- LOGIN -->
 <div class="login" id="loginScr">
   <div class="lcard">
-    <div class="llogo">CTL · Equipo Comercial v3 </div>
+    <div class="llogo">CTL · Equipo Comercial2 </div>
     <div class="ltitle">Vacaciones<br>2026</div>
     <div class="lsub">Inicia sesión con tu cuenta<br><strong>@digimobil.es</strong></div>
     <button class="gbtn" onclick="doLogin()">
@@ -344,7 +344,13 @@ document.addEventListener('fb-ready',()=>{
 
     window._onValue(window._ref(window._db,'vacaciones'),snap=>{
       const d=snap.val();
-      if(d) S.employees.forEach((_,i)=>{if(d[i]!=null)vacS[i]=new Set(Object.values(d[i]));});
+      if(d){
+        S.employees.forEach((emp,i)=>{
+          const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+          if(d[key]!=null) vacS[i]=new Set(d[key]);
+          else if(d[i]!=null) vacS[i]=new Set(Object.values(d[i]));
+        });
+      }
       render();renderStats();if(curU?.isSup)renderWeek();
       setDot('on');
     });
@@ -411,8 +417,10 @@ function togVac(ei,c){
 }
 async function saveVac(ei){
   setDot('busy');
+  const emp=S.employees[ei];
+  const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const arr=Array.from(vacS[ei]);
-  await window._set(window._ref(window._db,`vacaciones/${ei}`),arr.length?Object.fromEntries(arr.map((v,i)=>[i,v])):null);
+  await window._set(window._ref(window._db,`vacaciones/${key}`),arr.length?arr:null);
   setDot('on');
 }
 
@@ -491,9 +499,13 @@ function procFile(file){
       });
       st.textContent='Guardando en Firebase...';
       for(let i=0;i<S.employees.length;i++){
+        const emp=S.employees[i];
+        const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
         const arr=Array.from(vacS[i]);
-        await window._set(window._ref(window._db,`vacaciones/${i}`),arr.length?Object.fromEntries(arr.map((v,j)=>[j,v])):null);
+        await window._set(window._ref(window._db,`vacaciones/${key}`),arr.length?arr:null);
       }
+      // Clear old numeric keys
+      for(let i=0;i<14;i++) await window._set(window._ref(window._db,`vacaciones/${i}`),null);
       st.className='istat ok';st.textContent=`✓ Importado — ${updated} asesores actualizados`;
       render();renderStats();if(curU.isSup)renderWeek();
       toast('✓ Excel importado correctamente','ok');
@@ -506,15 +518,21 @@ function procFile(file){
 // REFRESH
 // ═══════════════════════════════
 async function resetFromExcel(){
-  if(!confirm('¿Resetear Firebase con los datos del Excel original? Esto sobreescribirá TODO.')) return;
+  if(!confirm('¿Resetear Firebase con los datos correctos del Excel?')) return;
   setSyncDot('busy'); toast('Reseteando...','wrn');
-  const correct={"0":{"0":4,"1":6,"2":7,"3":8,"4":11,"5":50,"6":53,"7":54,"8":55,"9":56,"10":57,"11":81,"12":82,"13":83,"14":84,"15":85,"16":88,"17":89,"18":130,"19":131,"20":132,"21":133,"22":137,"23":138,"24":139,"25":140,"26":141,"27":144,"28":145,"29":146,"30":147,"31":148,"32":151,"33":152,"34":153,"35":175,"36":333,"37":334,"38":335,"39":336,"40":337},"1":{"0":113,"1":116,"2":117,"3":118,"4":119,"5":218,"6":228,"7":229,"8":230,"9":231,"10":232,"11":235,"12":236,"13":237,"14":238,"15":239,"16":361,"17":362,"18":363},"2":{"0":88,"1":89,"2":90,"3":95,"4":96,"5":118,"6":133,"7":242,"8":243,"9":244,"10":245,"11":246,"12":256,"13":257,"14":258,"15":259,"16":260,"17":361,"18":362,"19":363,"20":368,"21":369},"3":{"0":1,"1":4,"2":6,"3":113,"4":193,"5":194,"6":195,"7":196,"8":197,"9":200,"10":201,"11":202,"12":203,"13":204,"14":207,"15":208,"16":209,"17":210,"18":211,"19":355,"20":356,"21":361,"22":362,"23":363},"4":{"0":123,"1":124,"2":125,"3":126,"4":127,"5":162,"6":169,"7":235,"8":236,"9":237,"10":238,"11":239,"12":249,"13":250,"14":251,"15":252,"16":253,"17":361,"18":362,"19":363,"20":368,"21":369},"5":{"0":32,"1":81,"2":82,"3":83,"4":84,"5":85,"6":214,"7":215,"8":216,"9":217,"10":218,"11":221,"12":222,"13":223,"14":224,"15":225,"16":302,"17":306,"18":307,"19":308,"20":309},"6":{"0":1,"1":137,"2":138,"3":139,"4":140,"5":141,"6":158,"7":159,"8":160,"9":161,"10":162,"11":256,"12":257,"13":258,"14":259,"15":260,"16":342,"17":343,"18":344,"19":361,"20":362,"21":363,"22":368,"23":369},"7":{"0":15,"1":39,"2":40,"3":41,"4":42,"5":43,"6":67,"7":193,"8":194,"9":195,"10":196,"11":197,"12":221,"13":222,"14":223,"15":224,"16":225,"17":285,"18":286,"19":287,"20":288,"21":291},"8":{"0":11,"1":12,"2":13,"3":14,"4":15,"5":88,"6":89,"7":90,"8":95,"9":96,"10":190,"11":200,"12":201,"13":202,"14":203,"15":204,"16":207,"17":208,"18":209,"19":210,"20":211,"21":361,"22":362,"23":363,"24":368,"25":369},"9":{"0":4,"1":6,"2":7,"3":8,"4":11,"5":123,"6":124,"7":125,"8":126,"9":127,"10":200,"11":201,"12":202,"13":203,"14":204,"15":214,"16":215,"17":216,"18":217,"19":218,"20":361,"21":362,"22":363,"23":368,"24":369,"25":371,"26":372,"27":375,"28":376,"29":377,"30":378},"10":{"0":137,"1":138,"2":139,"3":140,"4":141,"5":228,"6":229,"7":230,"8":231,"9":232,"10":235,"11":236,"12":237,"13":238,"14":239,"15":368,"16":369,"17":371,"18":372,"19":375}};
-  for(const [i,vacs] of Object.entries(correct)){
-    await window._set(window._ref(window._db,`vacaciones/${i}`),vacs);
-    vacS[parseInt(i)]=new Set(Object.values(vacs));
+  const correct={"carmen_castro":[4,6,7,8,11,50,53,54,55,56,57,81,82,83,84,85,88,89,130,131,132,133,137,138,139,140,141,144,145,146,147,148,151,152,153,175,333,334,335,336,337],"diana_bajares":[113,116,117,118,119,218,228,229,230,231,232,235,236,237,238,239,361,362,363],"jormaidir_romero":[88,89,90,95,96,118,133,242,243,244,245,246,256,257,258,259,260,361,362,363,368,369],"jose_monsalve":[1,4,6,113,193,194,195,196,197,200,201,202,203,204,207,208,209,210,211,355,356,361,362,363],"judith_venegas":[123,124,125,126,127,162,169,235,236,237,238,239,249,250,251,252,253,361,362,363,368,369],"maritza_diaz":[32,81,82,83,84,85,214,215,216,217,218,221,222,223,224,225,302,306,307,308,309],"paola_velasquez":[1,137,138,139,140,141,158,159,160,161,162,256,257,258,259,260,342,343,344,361,362,363,368,369],"ruth_carrasquero":[15,39,40,41,42,43,67,193,194,195,196,197,221,222,223,224,225,285,286,287,288,291],"tania_vivas":[11,12,13,14,15,88,89,90,95,96,190,200,201,202,203,204,207,208,209,210,211,361,362,363,368,369],"vanessa_gomez":[4,6,7,8,11,123,124,125,126,127,200,201,202,203,204,214,215,216,217,218,361,362,363,368,369,371,372,375,376,377,378],"yessica_ochoa":[137,138,139,140,141,228,229,230,231,232,235,236,237,238,239,368,369,371,372,375]};
+  for(const [key,vacs] of Object.entries(correct)){
+    await window._set(window._ref(window._db,`vacaciones/${key}`),vacs);
   }
-  render(); renderStats(); renderWeek();
-  setSyncDot('on'); toast('✓ Firebase reseteado con datos correctos','ok');
+  // Also clear old numeric keys
+  for(let i=0;i<11;i++) await window._set(window._ref(window._db,`vacaciones/${i}`),null);
+  S.employees.forEach((emp,i)=>{
+    const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if(correct[key]) vacS[i]=new Set(correct[key]);
+    else vacS[i]=new Set();
+  });
+  render(); renderStats(); if(curU?.isSup) renderWeek();
+  setSyncDot('on'); toast('✓ Firebase reseteado correctamente','ok');
 }
 async function refresh(){
   setDot('busy');toast('Actualizando...','wrn');
