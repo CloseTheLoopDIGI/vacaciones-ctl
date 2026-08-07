@@ -193,7 +193,7 @@ table{border-collapse:collapse}
 <!-- LOGIN -->
 <div class="login" id="loginScr">
   <div class="lcard">
-    <div class="llogo">CTL · Equipo Comercial2 </div>
+    <div class="llogo">CTL · Equipo Comercial! </div>
     <div class="ltitle">Vacaciones<br>2026</div>
     <div class="lsub">Inicia sesión con tu cuenta<br><strong>@digimobil.es</strong></div>
     <button class="gbtn" onclick="doLogin()">
@@ -345,11 +345,21 @@ document.addEventListener('fb-ready',()=>{
     window._onValue(window._ref(window._db,'vacaciones'),snap=>{
       const d=snap.val();
       if(d){
-        S.employees.forEach((emp,i)=>{
-          const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-          if(d[key]!=null) vacS[i]=new Set(d[key]);
-          else if(d[i]!=null) vacS[i]=new Set(Object.values(d[i]));
-        });
+        // Only use Firebase data if it has name-based keys (new format)
+        const hasNameKeys=Object.keys(d).some(k=>isNaN(k));
+        if(hasNameKeys){
+          S.employees.forEach((emp,i)=>{
+            const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+            if(d[key]!=null) vacS[i]=new Set(Array.isArray(d[key])?d[key]:Object.values(d[key]));
+            else vacS[i]=new Set(emp.vacations); // fallback to Excel data
+          });
+        } else {
+          // Old numeric format - ignore Firebase, use Excel data
+          S.employees.forEach((emp,i)=>{ vacS[i]=new Set(emp.vacations); });
+        }
+      } else {
+        // No Firebase data - use Excel data
+        S.employees.forEach((emp,i)=>{ vacS[i]=new Set(emp.vacations); });
       }
       render();renderStats();if(curU?.isSup)renderWeek();
       setDot('on');
@@ -518,21 +528,22 @@ function procFile(file){
 // REFRESH
 // ═══════════════════════════════
 async function resetFromExcel(){
-  if(!confirm('¿Resetear Firebase con los datos correctos del Excel?')) return;
+  if(!confirm('¿Resetear Firebase con los datos del Excel? Esto corregirá todos los datos.')) return;
   setSyncDot('busy'); toast('Reseteando...','wrn');
-  const correct={"carmen_castro":[4,6,7,8,11,50,53,54,55,56,57,81,82,83,84,85,88,89,130,131,132,133,137,138,139,140,141,144,145,146,147,148,151,152,153,175,333,334,335,336,337],"diana_bajares":[113,116,117,118,119,218,228,229,230,231,232,235,236,237,238,239,361,362,363],"jormaidir_romero":[88,89,90,95,96,118,133,242,243,244,245,246,256,257,258,259,260,361,362,363,368,369],"jose_monsalve":[1,4,6,113,193,194,195,196,197,200,201,202,203,204,207,208,209,210,211,355,356,361,362,363],"judith_venegas":[123,124,125,126,127,162,169,235,236,237,238,239,249,250,251,252,253,361,362,363,368,369],"maritza_diaz":[32,81,82,83,84,85,214,215,216,217,218,221,222,223,224,225,302,306,307,308,309],"paola_velasquez":[1,137,138,139,140,141,158,159,160,161,162,256,257,258,259,260,342,343,344,361,362,363,368,369],"ruth_carrasquero":[15,39,40,41,42,43,67,193,194,195,196,197,221,222,223,224,225,285,286,287,288,291],"tania_vivas":[11,12,13,14,15,88,89,90,95,96,190,200,201,202,203,204,207,208,209,210,211,361,362,363,368,369],"vanessa_gomez":[4,6,7,8,11,123,124,125,126,127,200,201,202,203,204,214,215,216,217,218,361,362,363,368,369,371,372,375,376,377,378],"yessica_ochoa":[137,138,139,140,141,228,229,230,231,232,235,236,237,238,239,368,369,371,372,375]};
-  for(const [key,vacs] of Object.entries(correct)){
-    await window._set(window._ref(window._db,`vacaciones/${key}`),vacs);
-  }
-  // Also clear old numeric keys
-  for(let i=0;i<11;i++) await window._set(window._ref(window._db,`vacaciones/${i}`),null);
+  // Step 1: Delete ALL existing vacaciones data
+  await window._set(window._ref(window._db,'vacaciones'),null);
+  // Step 2: Write correct name-keyed data
+  const updates={};
   S.employees.forEach((emp,i)=>{
     const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    if(correct[key]) vacS[i]=new Set(correct[key]);
-    else vacS[i]=new Set();
+    if(emp.vacations&&emp.vacations.length>0){
+      updates[key]=emp.vacations;
+    }
+    vacS[i]=new Set(emp.vacations);
   });
+  await window._set(window._ref(window._db,'vacaciones'),updates);
   render(); renderStats(); if(curU?.isSup) renderWeek();
-  setSyncDot('on'); toast('✓ Firebase reseteado correctamente','ok');
+  setSyncDot('on'); toast('✓ Datos reseteados correctamente','ok');
 }
 async function refresh(){
   setDot('busy');toast('Actualizando...','wrn');
