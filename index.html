@@ -193,7 +193,7 @@ table{border-collapse:collapse}
 <!-- LOGIN -->
 <div class="login" id="loginScr">
   <div class="lcard">
-    <div class="llogo">CTL · Equipo Comercial! </div>
+    <div class="llogo">CTL · Equipo Comercial</div>
     <div class="ltitle">Vacaciones<br>2026</div>
     <div class="lsub">Inicia sesión con tu cuenta<br><strong>@digimobil.es</strong></div>
     <button class="gbtn" onclick="doLogin()">
@@ -495,14 +495,19 @@ function procFile(file){
       const ws=wb.Sheets[wb.SheetNames[0]];
       const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
       let updated=0;
-      // Excel rows 19-29 (0-indexed 18-28), date cols start at Excel col 6 = array index 5
-      Object.entries(ERM).forEach(([exRow,ei])=>{
-        const row=data[parseInt(exRow)-1];
-        if(!row)return;
+      // Match by NAME: find each employee row by scanning col C (array index 2)
+      S.employees.forEach((emp,ei)=>{
+        let empRow=null;
+        for(let ri=0;ri<data.length;ri++){
+          const cellName=String(data[ri][2]||'').trim().toLowerCase();
+          if(cellName===emp.name.trim().toLowerCase()){empRow=ri;break;}
+        }
+        if(empRow===null){console.warn('Not found:',emp.name);return;}
+        const row=data[empRow];
         const nv=new Set();
         row.forEach((val,ai)=>{
           if(ai<4)return; // skip cols A-D (indices 0-3)
-          const ci=ai-4; // colIdx: array index 4 = Excel col E = colIdx 0
+          const ci=ai-4;  // col E (array idx 4) = colIdx 0
           if(ci>=0&&ci<S.dates.length&&String(val).toUpperCase().trim()==='V')nv.add(ci);
         });
         vacS[ei]=nv;updated++;
