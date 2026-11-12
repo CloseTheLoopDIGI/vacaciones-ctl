@@ -485,6 +485,64 @@ function closeImp(){document.getElementById('impModal').classList.remove('show')
 function handleDrop(e){e.preventDefault();document.getElementById('dzone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)procFile(f);}
 function handleFile(e){const f=e.target.files[0];if(f)procFile(f);e.target.value='';}
 
+function normName(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLowerCase();}
+
+// Lee el Excel SIN posiciones fijas: fechas desde el encabezado, asesores por nombre
+function parseVacExcel(wb){
+  const sn=wb.SheetNames.find(n=>/calendario/i.test(n))||wb.SheetNames[0];
+  const ws0=wb.Sheets[sn];
+  const data=XLSX.utils.sheet_to_json(ws0,{header:1,defval:''});
+  const r0=ws0['!ref']?XLSX.utils.decode_range(ws0['!ref']).s.r:0; // la 1ª fila del array no siempre es la fila 1 de Excel
+  const MN=MNS.map(normName);
+  let monthRow=-1;
+  for(let ri=0;ri<Math.min(10,data.length)&&monthRow<0;ri++){
+    if(data[ri].some(v=>typeof v==='string'&&MN.includes(normName(v))))monthRow=ri;
+  }
+  if(monthRow<0)throw new Error('No encuentro la fila de meses en el encabezado');
+  let dayRow=-1,best=0;
+  for(let ri=monthRow+1;ri<=monthRow+4&&ri<data.length;ri++){
+    const n=data[ri].filter(v=>typeof v==='number'&&Number.isInteger(v)&&v>=1&&v<=31).length;
+    if(n>best){best=n;dayRow=ri;}
+  }
+  if(dayRow<0)throw new Error('No encuentro la fila de días en el encabezado');
+  const lookup={};
+  S.dates.forEach((d,i)=>{lookup[d.month+'|'+d.day]=i;});
+  const colMap={};
+  let curM=null,passedDec=false,mapped=0;
+  const mrow=data[monthRow],drow=data[dayRow];
+  for(let ai=0;ai<drow.length;ai++){
+    const mv=mrow[ai];
+    if(typeof mv==='string'&&mv.trim()!==''){
+      const k=MN.indexOf(normName(mv));
+      if(k>=0){
+        curM=(k===0&&passedDec)?'Enero 2027':MNS[k];
+        if(k===11)passedDec=true;
+      }else if(/enero/i.test(mv)&&/2027/.test(mv)){curM='Enero 2027';}
+    }else if(typeof mv==='number'&&passedDec){curM='Enero 2027';}
+    const dv=drow[ai];
+    if(curM&&typeof dv==='number'&&Number.isInteger(dv)&&dv>=1&&dv<=31){
+      const ci=lookup[curM+'|'+dv];
+      if(ci!==undefined){colMap[ai]=ci;mapped++;}
+    }
+  }
+  const result={},found=[],missing=[];
+  S.employees.forEach((emp,ei)=>{
+    const target=normName(emp.name);
+    let row=-1;
+    for(let ri=dayRow+1;ri<data.length&&row<0;ri++){
+      for(let c=0;c<4;c++){if(normName(data[ri][c])===target){row=ri;break;}}
+    }
+    if(row<0){missing.push(emp.name);return;}
+    const nv=new Set();
+    Object.entries(colMap).forEach(([ai,ci])=>{
+      if(normName(data[row][ai])==='v')nv.add(ci);
+    });
+    result[ei]=nv;
+    found.push({name:emp.name,excelRow:row+1+r0,count:nv.size});
+  });
+  return {result,found,missing,mapped,sheet:sn};
+}
+
 function procFile(file){
   const st=document.getElementById('istat');
   st.className='istat';st.textContent='Leyendo archivo...';
@@ -492,39 +550,25 @@ function procFile(file){
   r.onload=async e=>{
     try{
       const wb=XLSX.read(e.target.result,{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-      let updated=0;
-      // Match by NAME: find each employee row by scanning col C (array index 2)
-      S.employees.forEach((emp,ei)=>{
-        let empRow=null;
-        for(let ri=0;ri<data.length;ri++){
-          const cellName=String(data[ri][2]||'').trim().toLowerCase();
-          if(cellName===emp.name.trim().toLowerCase()){empRow=ri;break;}
-        }
-        if(empRow===null){console.warn('Not found:',emp.name);return;}
-        const row=data[empRow];
-        const nv=new Set();
-        row.forEach((val,ai)=>{
-          if(ai<4)return; // skip cols A-D (indices 0-3)
-          const ci=ai-4;  // col E (array idx 4) = colIdx 0
-          if(ci>=0&&ci<S.dates.length&&String(val).toUpperCase().trim()==='V')nv.add(ci);
-        });
-        vacS[ei]=nv;updated++;
-      });
+      const p=parseVacExcel(wb);
+      if(p.mapped<300)throw new Error('Solo se reconocieron '+p.mapped+' fechas del encabezado (se esperaban unas 396)');
+      if(!p.found.length)throw new Error('No se encontró a ningún asesor en el archivo');
       st.textContent='Guardando en Firebase...';
-      for(let i=0;i<S.employees.length;i++){
-        const emp=S.employees[i];
+      for(const [ei,nv] of Object.entries(p.result)){
+        vacS[ei]=nv;
+        const emp=S.employees[ei];
         const key=emp.name.toLowerCase().replace(/ /g,'_').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-        const arr=Array.from(vacS[i]);
+        const arr=Array.from(nv);
         await window._set(window._ref(window._db,`vacaciones/${key}`),arr.length?arr:null);
       }
-      // Clear old numeric keys
       for(let i=0;i<14;i++) await window._set(window._ref(window._db,`vacaciones/${i}`),null);
-      st.className='istat ok';st.textContent=`✓ Importado — ${updated} asesores actualizados`;
+      let rep=`✓ Importado de la hoja "${p.sheet}" (${p.mapped} fechas reconocidas)<br>`;
+      rep+=p.found.map(f=>`${f.name}: fila ${f.excelRow} · ${f.count} días`).join('<br>');
+      if(p.missing.length)rep+=`<br><span style="color:var(--wrn)">⚠ No encontrados en el Excel: ${p.missing.join(', ')}</span>`;
+      st.className='istat ok';st.style.maxHeight='190px';st.style.overflowY='auto';st.innerHTML=rep;
       render();renderStats();if(curU.isSup)renderWeek();
       toast('✓ Excel importado correctamente','ok');
-    }catch(err){st.className='istat err';st.textContent='Error al leer el archivo.';console.error(err);}
+    }catch(err){st.className='istat err';st.textContent='Error: '+err.message;console.error(err);}
   };
   r.readAsArrayBuffer(file);
 }
